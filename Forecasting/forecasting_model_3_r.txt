@@ -3,7 +3,7 @@
 #install.packages("xts")
 library(forecast)
 library(reshape)
-#library(xts)
+library(xts)
 
 add.months<-function(date,n) seq(date, by = paste (n, "months"), length = 2)[2]
 
@@ -11,8 +11,8 @@ forecastStl <- function(myTs,var_name, n.ahead = 6) {
   fit.stl <- stl(myTs,t.window=8, s.window = 'periodic')
   sts <- fit.stl$time.series
   fore <- forecast(fit.stl, h = n.ahead, level = 95)
-  plot(sts,main=paste0(var_name," - STS Decompose"))
-  pdf(paste0(path,"output/",var_name,"_sts_decompose.pdf"))
+  plot(sts,main=paste0(var_name," - STL Decompose"))
+  pdf(paste0(path,"output/",var_name,"_stl_decompose.pdf"))
   plot(sts)
   dev.off( )
   return(fore$mean)
@@ -70,19 +70,23 @@ output1<-data.frame()
 
 
 
-
-for (i in 2:length(variables)){
+## CC
+for (i in 2:7){ 
   
   y<-v[,i]/lag(v[,i-1],-1) ### net flows calculation
   var_name<-paste0(variables[i],"NF")
-  MAPE6<-MAPE_ts(y,var_name,v[,i-1],6)
-  MAPE6$var<-var
-  MAPE3<-MAPE_ts(y,var_name,v[,i-1],3)
-  MAPE3$var<-var
-  #forecast<-forecastStl(myTs,BxTs,6)
-  #forecast_df<-data.frame(YearMonth=as.Date(time(forecast)),n.ahead=0,actual="",forecast=forecast,MAPE="",var=var)
-  #output<-rbind(output,MAPE6,MAPE3,forecast_df)
-  output<-rbind(output,MAPE6,MAPE3)
+  y_pred<-forecastStl(y,var_name,n.ahead)
+  
+  if (ncol(output)==0){
+	var_name<-variables[i-1]
+	x_pred<-forecastStl(v[,i-1],var_name,n.ahead)
+	v_pred<-c(as.xts(v[,i-1]),as.xts(x_pred))
+	forecast<-c(as.xts(v[,i]),lag(v_pred,1)*as.xts(y_pred))
+	output<-cbind(v_pred,forecast)
+  } else {
+  forecast<-lag(output[,i-1],1)*as.xts(y_pred) # здесь нужно брать из таблицы с actuals+forecast
+  }
+
 }
 
 ###  validation results
