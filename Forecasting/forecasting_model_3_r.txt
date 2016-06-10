@@ -24,31 +24,12 @@ avg_l3_ns_months<-function(myTs,n.ahead = 6){
   pred<-rep(mean(tail(myTs_cleared,3)),n.ahead )
   start<-tsp(myTs)[2]+2/12
   start<-c(trunc(start),start%%1*12)     # incorrect for Dec!
-  pred<-ts(pred,start=start, frequency=12) 
+  pred<-ts(pred,start=start, freuency=12) 
   return(pred)
 }
 
 
-MAPE_ts<-function(y,var_name,BxTs, n.ahead=6){
-  test_df<-data.frame()
-  for (i in 30:length(y)){
-    end<-tsp(y)[1]+i/12
-    end<-c(trunc(end),end%%1*12)
-    t_y<-window(y,end=end)
-    t_y_pred<-forecastStl(t_y,var_name,n.ahead)
-    actual<-lag(BxTs,-1)*y
-    forecast<-lag(BxTs,-1)*t_y_pred
-    df<-data.frame(YearMonth=as.Date(paste(end(t_y_pred)[1],end(t_y_pred)[2],1,sep="/")),
-                   n.ahead=n.ahead,
-                   actual=actual[i+n.ahead],
-                   actual_nf=y[i+n.ahead],
-                   forecast=forecast[n.ahead],
-                   forecast_nf=t_y_pred[n.ahead],
-                   MAPE=abs(forecast[n.ahead]-actual[i+n.ahead])/actual[i+n.ahead])
-    test_df<-rbind(test_df,df)
-  }
-  return(test_df)
-}
+
 
 #path<-"/Users/AlexAkimenko/Documents/работа/Citi/Forecasting/"
 path<-"//vkovnazcti0023/COL/0-Collections_Strategy_and_System_Support/STRATEGY/Akimenko/pilots/forecasting/"
@@ -58,36 +39,61 @@ start_month<-c(2012,12)  # correct - needs to be selected from input data (min m
 end_month<-c(2016, 4) # correct - needs to be selected from input data
 forecast_month<-c(2016, 5) # correct - needs to be selected from input data
 v<-ts(v[,-1], start=start_month, end=end_month, frequency=12)
-v[,1]<-c(as.xts(v[,1]),as.xts(forecastStl(v[,1],variables[1])))
-
-
-
-output<-data.frame()
-output1<-data.frame()
 
 
 
 
+# net flow model works on product level only. Thus it requires specific input- time series data ("v") with column names containing product name ("prod")
 
-
-## CC
-for (i in 2:7){ 
-  
-  y<-v[,i]/lag(v[,i-1],-1) ### net flows calculation
-  var_name<-paste0(variables[i],"NF")
-  y_pred<-forecastStl(y,var_name,n.ahead)
-  
-  if (ncol(output)==0){
-	var_name<-variables[i-1]
-	x_pred<-forecastStl(v[,i-1],var_name,n.ahead)
-	v_pred<-c(as.xts(v[,i-1]),as.xts(x_pred))
-	forecast<-c(as.xts(v[,i]),lag(v_pred,1)*as.xts(y_pred))
-	output<-cbind(v_pred,forecast)
-  } else {
-  forecast<-lag(output[,i-1],1)*as.xts(y_pred) # здесь нужно брать из таблицы с actuals+forecast
-  }
-
+net_flow_model<-function(prod,v=v, n.ahead=6){
+	output<-ts()
+	ts<-v[,grep(prod, colnames(v))]
+	for (i in 2:ncol(ts)){ 
+		y<-ts[,i]/lag(ts[,i-1],-1) ### net flows calculation
+		var_name<-paste0(colnames(ts)[i],"NF")
+		y_pred<-forecastStl(y,var_name,n.ahead)
+		if (grepl("0", colnames(ts)[i-1])){
+			var_name<-colnames(ts)[i-1]
+			bucket0_pred<-forecastStl(ts[,i-1],var_name,n.ahead)
+			bucket0<-c(as.xts(ts[,i-1]),as.xts(bucket0_pred))
+			bucket1<-c(as.xts(ts[,i]),lag(bucket0,1)*as.xts(y_pred))
+			
+			output<-cbind(bucket0,bucket1)
+		} else {
+			bucket<-c(as.xts(ts[,i]),lag(output[,i-1],1)*as.xts(y_pred)) # здесь берется из таблицы с actuals+forecast
+			output<-cbind(output,bucket)
+		}
+	}
+	return (tail(output,n.ahead+1))
 }
+
+PIL_forecast<-net_flow_model("PIL",v,6)
+CC_forecast<-net_flow_model("CC",v,6)
+
+MAPE<-function(prod,v=v, n.ahead=6){
+	test_df<-data.frame()
+	for (i in 26:nrow(v)){
+		end<-tsp(v)[1]+i/12
+		end<-c(trunc(end),end%%1*12)
+		ts<-v[,grep(prod, colnames(v))]
+		ts<-window(ts,end=end)
+		ts_pred<-net_flow_model(prod,ts,n.ahead)
+		actual<-lag(BxTs,-1)*y
+		forecast<-lag(BxTs,-1)*t_y_pred
+		df<-data.frame(YearMonth=as.Date(paste(end(t_y_pred)[1],end(t_y_pred)[2],1,sep="/")),
+					   n.ahead=n.ahead,
+					   actual=actual[i+n.ahead],
+					   actual_nf=y[i+n.ahead],
+					   forecast=forecast[n.ahead],
+					   forecast_nf=t_y_pred[n.ahead],
+					   MAPE=abs(forecast[n.ahead]-actual[i+n.ahead])/actual[i+n.ahead])
+		test_df<-rbind(test_df,df)
+  }
+  return(test_df)
+}
+
+output<-cbind(output_cc,output_pil)
+write.table(t(output), paste0(path,"/output/forecast.txt"), sep="\t",row.names=F)	
 
 ###  validation results
 output$forecast<-as.character(output$forecast)
@@ -117,3 +123,73 @@ df<-data.frame(YearMonth=as.Date(paste(end(t_y_pred)[1],end(t_y_pred)[2],1,sep="
   forecast_nf=t_y_pred[n.ahead],
   MAPE=abs(forecast[n.ahead]-actual[i+n.ahead])/actual[i+n.ahead])
 test_df<-rbind(test_df,df)
+
+
+
+
+#### deep dive into variables
+
+		
+for (i in 26:38){
+	end<-tsp(v)[1]+i/12
+	end<-c(trunc(end),end%%1*12)
+	ts<-window(v[,8],end=end)
+	fit.stl <- stl(ts,t.window=100, s.window = 'periodic')
+	fore <- forecast(fit.stl, h = n.ahead, level = 95)
+	if (i==26){
+		plot(v[,8])
+		lines(fore$mean,col="red")
+	} else {
+		lines(fore$mean,col="red")
+	}
+}
+for (i in 26:38){
+	end<-tsp(v)[1]+i/12
+	end<-c(trunc(end),end%%1*12)
+	ts<-window(v,end=end)
+	ts_pred<-net_flow_model(prod,ts,n.ahead)
+	if (i==26){
+		plot(as.xts(v[,9]))
+		lines(ts_pred[,2],col="red")
+	} else {
+		lines(ts_pred[,2],col="red")
+	}
+}
+
+forecastStl <- function(myTs,var_name, n.ahead = 6) {
+  fit.stl <- stl(myTs,t.window=8, s.window = 'periodic')
+  sts <- fit.stl$time.series
+  fore <- forecast(fit.stl, h = n.ahead, level = 95)
+  #plot(sts,main=paste0(var_name," - STL Decompose"))
+  #pdf(paste0(path,"output/",var_name,"_stl_decompose.pdf"))
+  #plot(sts)
+  #dev.off( )
+  return(fore$mean)
+}
+
+
+
+#### deep dive into variables (avg_l3_ns_months)
+
+for (i in 26:38){
+	end<-tsp(v)[1]+i/12
+	end<-c(trunc(end),end%%1*12)
+	ts<-window(v[,8],end=end)
+	fore <- avg_l3_ns_months(ts,6)
+	if (i==26){
+		plot(v[,8])
+		lines(fore,col="red")
+	} else {
+		lines(fore,col="red")
+	}
+}
+
+
+#install.packages("stsm")
+#install.packages("stsm.class")
+library(stsm.class)
+library(stsm)
+t<-window(v[,1],start=c(2013,1),end=c(2015,12))
+m <- stsm.model(model = "BSM", y = t, transPars = "StructTS")
+fit2 <- stsmFit(m, stsm.method = "maxlik.td.optim", method = "L-BFGS-B", 
+	KF.args = list(P0cov = TRUE))
