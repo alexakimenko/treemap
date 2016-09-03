@@ -1,0 +1,40 @@
+library(XLConnect)
+library(forecast)
+
+
+# this needs to be changed in case of new user
+path<-"//vkovnazcti0023/COL/0-Collections_Strategy_and_System_Support/STRATEGY/Akimenko/pilots/Forecasting_daily/" # current working directory
+n.ahead<-30   # number of periods to forecast
+
+wb <- loadWorkbook(paste0(path,"input.xlsx"))
+v <- readWorksheet(wb, sheet = "Sheet1", header = TRUE)
+
+# v<-ts(v[,-1], start=v[1,1], end=v[1,nrow(v)], frequency=12)
+
+x2 <- msts(v[,2], seasonal.periods=c(7,365/12))
+fit <- tbats(x2)
+x.sa <- seasadj(fit)
+
+v[,17]<-as.factor(v[,17])
+v[,18]<-as.factor(v[,18])
+v[,19]<-as.factor(v[,19])
+v[,20]<-as.factor(v[,20])
+v[,21]<-as.factor(v[,21])
+v[,22]<-as.factor(v[,22])
+
+# LM MODEL
+end<-nrow(v)-n.ahead
+
+x_train<-v[1:end,16:ncol(v)]
+# x_train<-v[86:end,16:ncol(v)]
+x_test<-v[end:nrow(v),16:ncol(v)]
+
+y_train<-v[1:end,3]
+# y_train<-v[86:end,3]
+y_test<-v[end:nrow(v),3]
+
+fit<-lm(y_train~.,data=x_train)
+summary(fit)
+
+y_test_pred<-predict(fit,x_test)
+abs(y_test-y_test_pred)/y_test
