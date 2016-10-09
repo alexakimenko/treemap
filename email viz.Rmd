@@ -1,0 +1,75 @@
+---
+title: "email viz"
+author: "Alex Akimenko"
+date: "07 10 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(openxlsx)
+library(data.table)
+library(tm)
+library(wordcloud2)
+library(SnowballC)
+library(lubridate)
+library(dygraphs)
+library(xts)
+library(forecast)
+
+cleanCorpus <- function(corpus){
+  corpus.tmp <- tm_map(corpus, removePunctuation)
+  corpus.tmp <- tm_map(corpus.tmp,tolower)
+  corpus.tmp <- tm_map(corpus.tmp, removeNumbers)
+  corpus.tmp <- tm_map(corpus.tmp, PlainTextDocument)
+  # corpus.tmp <- tm_map(corpus.tmp, stemDocument)
+  corpus.tmp <- tm_map(corpus.tmp,removeWords, stopwords("english"))
+  return(corpus.tmp)
+}
+
+wordcloud_df<-function(corpus){
+  t.tdm <- TermDocumentMatrix(corpus)
+  TDMasMatrix <- as.matrix(t.tdm)
+  TDMasDF<-data.frame(TDMasMatrix)
+  TDMasDF$words <-rownames(TDMasDF)
+  colnames(TDMasDF) <- c("freq", "word")
+  TDMasDF<-TDMasDF[order(-TDMasDF$freq),]
+  TDMasDF<-TDMasDF[, c("word", "freq")]
+  TDMasDF
+}
+
+email<-as.data.table(read.xlsx("data/email.xlsx", sheet = 1, startRow = 1, colNames = TRUE))
+email<-email[,-c(7,8),with=F]
+email<-email[-c(1:223),]
+email$Received<-as.Date(as.numeric(email$Received),origin="1899-12-30")
+```
+
+
+### Incoming mail dinamics
+
+```{r echo=FALSE}
+
+email_ag<-email[,.N,by=.(Received)]
+email_ag<-email_ag[!is.na(email_ag$Received),]
+email_ts<-as.xts(email_ag)
+dygraph(email_ts, main = "Incoming mail dinamics") %>% 
+  dyRangeSelector(dateWindow = c("2016-06-01", "2016-08-30"))
+
+email$day<-day(email$Received)
+email$month<-month(email$Received)
+
+```
+
+### Incoming Email subject
+
+```{r echo=FALSE}
+email_corpus <-  Corpus(VectorSource( toString(email$Subject) ))
+email_corpus <- cleanCorpus(email_corpus)
+email_copus_df<-wordcloud_df(email_corpus)
+wordcloud2(email_copus_df[email_copus_df$freq>40,], size = 0.8,color="black", fontFamily="Arial")
+
+```
+
